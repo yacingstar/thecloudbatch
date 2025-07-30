@@ -1,0 +1,39 @@
+<!-- src/main/resources/static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Uploader</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+        input[type="file"] { display: none; }
+    </style>
+    <script>
+        function uploadFile(inputId, fileType) {
+            const input = document.getElementById(inputId);
+            input.onchange = function() {
+                if (input.files.length > 0) {
+                    const formData = new FormData();
+                    formData.append("file", input.files[0]);
+                    fetch('/upload?type=' + fileType, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.text())
+                    .then(data => alert(data))
+                    .catch(error => alert('Upload failed: ' + error));
+                }
+            };
+            input.click();
+        }
+    </script>
+</head>
+<body>
+    <h1>Upload File</h1>
+    <button onclick="uploadFile('lotInput', 'lot')">Add .LOT file</button>
+    <input id="lotInput" type="file" accept=".lot">
+    <button onclick="uploadFile('ordInput', 'ord')">Add .ORD file</button>
+    <input id="ordInput" type="file" accept=".ord">
+</body>
+</html>
