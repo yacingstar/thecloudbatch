@@ -1,39 +1,190 @@
-<!-- src/main/resources/static/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>File Uploader</title>
+    <title>Remises Uploader</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
-        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
-        input[type="file"] { display: none; }
-    </style>
-    <script>
-        function uploadFile(inputId, fileType) {
-            const input = document.getElementById(inputId);
-            input.onchange = function() {
-                if (input.files.length > 0) {
-                    const formData = new FormData();
-                    formData.append("file", input.files[0]);
-                    fetch('/upload?type=' + fileType, {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.text())
-                    .then(data => alert(data))
-                    .catch(error => alert('Upload failed: ' + error));
-                }
-            };
-            input.click();
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-    </script>
+        .right-btn {
+            margin-left: auto;
+        }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+        .remise-block { margin-bottom: 40px; }
+        table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        input[type="file"] { display: none; }
+        .totalAmount { margin-top: 10px; font-weight: bold; }
+        .remise-title { font-size: 18px; margin-top: 20px; }
+        #generateLotBtn { background: #4CAF50; color: white; }
+        #downloadLotLink { display: block; margin: 10px 0 0 0; }
+    </style>
 </head>
 <body>
-    <h1>Upload File</h1>
-    <button onclick="uploadFile('lotInput', 'lot')">Add .LOT file</button>
-    <input id="lotInput" type="file" accept=".lot">
-    <button onclick="uploadFile('ordInput', 'ord')">Add .ORD file</button>
-    <input id="ordInput" type="file" accept=".ord">
+    <h1>Remises Uploader</h1>
+    <div class="top-bar" id="topBar">
+        <button onclick="document.getElementById('remisesInput').click()">Add Remises (.cheque)</button>
+        <div class="right-btn">
+            <button id="generateLotBtn" onclick="generateLotFile()" disabled>Generate LOT file</button>
+            <a id="downloadLotLink" style="display:none;" download="merged.LOT">Download LOT file</a>
+        </div>
+    </div>
+    <input id="remisesInput" type="file" accept=".cheque" multiple onchange="handleFiles(event)">
+    <div id="remisesContainer"></div>
+    <script>
+        let loadedFiles = [];
+        let lotBlob = null;
+        let lotLines = null;
+
+        function handleFiles(event) {
+            const files = event.target.files;
+            if (!files.length) return;
+            loadedFiles = [];
+            lotBlob = null;
+            lotLines = null;
+            document.getElementById("downloadLotLink").style.display = "none";
+            const container = document.getElementById("remisesContainer");
+            container.innerHTML = "";
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const lines = e.target.result.split(/\r?\n/).filter(line => line.trim() !== "");
+                    if (lines.length < 2) return;
+                    loadedFiles.push(lines);
+                    let total = 0;
+                    const table = document.createElement("table");
+                    const thead = document.createElement("thead");
+                    thead.innerHTML = `
+                        <tr>
+                            <th>RIO</th>
+                            <th>Operation Type</th>
+                            <th>Beneficiary RIB</th>
+                            <th>Beneficiary Bank</th>
+                            <th>Cheque Number</th>
+                            <th>Sender RIB</th>
+                            <th>Sender Bank</th>
+                            <th>Amount</th>
+                        </tr>`;
+                    table.appendChild(thead);
+                    const tbody = document.createElement("tbody");
+                    for (let i = 1; i < lines.length; i++) {
+                        const values = lines[i].split(".");
+                        if (values.length !== 8) continue;
+                        const row = document.createElement("tr");
+                        values.forEach((val, idx) => {
+                            const cell = document.createElement("td");
+                            cell.textContent = val;
+                            row.appendChild(cell);
+                            if (idx === 7) {
+                                const amount = parseFloat(val.replace(",", "."));
+                                if (!isNaN(amount)) total += amount;
+                            }
+                        });
+                        tbody.appendChild(row);
+                    }
+                    table.appendChild(tbody);
+                    const block = document.createElement("div");
+                    block.className = "remise-block";
+                    const title = document.createElement("div");
+                    title.className = "remise-title";
+                    title.textContent = "Remise: " + file.name;
+                    const totalDiv = document.createElement("div");
+                    totalDiv.className = "totalAmount";
+                    totalDiv.textContent = "Total Amount: " + total;
+                    block.appendChild(title);
+                    block.appendChild(table);
+                    block.appendChild(totalDiv);
+                    container.appendChild(block);
+                    document.getElementById("generateLotBtn").disabled = false;
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        function generateLotFile() {
+            if (!loadedFiles.length) return;
+            const btn = document.getElementById("generateLotBtn");
+            btn.disabled = true;
+            const oldText = btn.textContent;
+            btn.textContent = "Generating...";
+            setTimeout(() => {
+                // Merge files
+                lotLines = [loadedFiles[0][0]];
+                loadedFiles.forEach(lines => {
+                    lotLines.push(...lines.slice(1));
+                });
+                lotBlob = new Blob([lotLines.join("\n")], { type: "text/plain" });
+                // Show download link
+                const link = document.getElementById("downloadLotLink");
+                link.href = URL.createObjectURL(lotBlob);
+                link.style.display = "block";
+                btn.textContent = oldText;
+                btn.disabled = false;
+                // Reload UI to show only the LOT file
+                showLotTable();
+            }, 500);
+        }
+
+        function showLotTable() {
+            // Hide file input and generate button
+            document.getElementById("topBar").style.display = "none";
+            document.getElementById("remisesInput").style.display = "none";
+            // Show LOT file in table
+            const container = document.getElementById("remisesContainer");
+            container.innerHTML = "";
+            if (!lotLines || lotLines.length < 2) return;
+            let total = 0;
+            const table = document.createElement("table");
+            const thead = document.createElement("thead");
+            thead.innerHTML = `
+                <tr>
+                    <th>RIO</th>
+                    <th>Operation Type</th>
+                    <th>Beneficiary RIB</th>
+                    <th>Beneficiary Bank</th>
+                    <th>Cheque Number</th>
+                    <th>Sender RIB</th>
+                    <th>Sender Bank</th>
+                    <th>Amount</th>
+                </tr>`;
+            table.appendChild(thead);
+            const tbody = document.createElement("tbody");
+            for (let i = 1; i < lotLines.length; i++) {
+                const values = lotLines[i].split(".");
+                if (values.length !== 8) continue;
+                const row = document.createElement("tr");
+                values.forEach((val, idx) => {
+                    const cell = document.createElement("td");
+                    cell.textContent = val;
+                    row.appendChild(cell);
+                    if (idx === 7) {
+                        const amount = parseFloat(val.replace(",", "."));
+                        if (!isNaN(amount)) total += amount;
+                    }
+                });
+                tbody.appendChild(row);
+            }
+            table.appendChild(tbody);
+            const block = document.createElement("div");
+            block.className = "remise-block";
+            const title = document.createElement("div");
+            title.className = "remise-title";
+            title.textContent = "LOT File: merged.LOT";
+            const totalDiv = document.createElement("div");
+            totalDiv.className = "totalAmount";
+            totalDiv.textContent = "Total Amount: " + total;
+            block.appendChild(title);
+            block.appendChild(table);
+            block.appendChild(totalDiv);
+            container.appendChild(block);
+            // Show download link
+            document.getElementById("downloadLotLink").style.display = "block";
+        }
+    </script>
 </body>
 </html>
