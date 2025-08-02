@@ -22,7 +22,6 @@
         .totalAmount { margin-top: 10px; font-weight: bold; }
         .remise-title { font-size: 18px; margin-top: 20px; }
         #generateLotBtn { background: #4CAF50; color: white; }
-        #downloadLotLink { display: block; margin: 10px 0 0 0; }
     </style>
 </head>
 <body>
@@ -31,7 +30,6 @@
         <button onclick="document.getElementById('remisesInput').click()">Add Remises (.cheque)</button>
         <div class="right-btn">
             <button id="generateLotBtn" onclick="generateLotFile()" disabled>Generate LOT file</button>
-            <a id="downloadLotLink" style="display:none;" download="merged.LOT">Download LOT file</a>
         </div>
     </div>
     <input id="remisesInput" type="file" accept=".cheque" multiple onchange="handleFiles(event)">
@@ -40,6 +38,7 @@
         let loadedFiles = [];
         let lotBlob = null;
         let lotLines = null;
+        let lotCounter = 1;
 
         function handleFiles(event) {
             const files = event.target.files;
@@ -47,7 +46,6 @@
             loadedFiles = [];
             lotBlob = null;
             lotLines = null;
-            document.getElementById("downloadLotLink").style.display = "none";
             const container = document.getElementById("remisesContainer");
             container.innerHTML = "";
             Array.from(files).forEach(file => {
@@ -106,85 +104,43 @@
             });
         }
 
-        function generateLotFile() {
-            if (!loadedFiles.length) return;
-            const btn = document.getElementById("generateLotBtn");
-            btn.disabled = true;
-            const oldText = btn.textContent;
-            btn.textContent = "Generating...";
-            setTimeout(() => {
-                // Merge files
-                lotLines = [loadedFiles[0][0]];
-                loadedFiles.forEach(lines => {
-                    lotLines.push(...lines.slice(1));
-                });
-                lotBlob = new Blob([lotLines.join("\n")], { type: "text/plain" });
-                // Show download link
-                const link = document.getElementById("downloadLotLink");
-                link.href = URL.createObjectURL(lotBlob);
-                link.style.display = "block";
-                btn.textContent = oldText;
-                btn.disabled = false;
-                // Reload UI to show only the LOT file
-                showLotTable();
-            }, 500);
-        }
+		function generateLotFile() {
+		    if (!loadedFiles.length) return;
+		    const btn = document.getElementById("generateLotBtn");
+		    btn.disabled = true;
+		    const oldText = btn.textContent;
+		    btn.textContent = "Generating...";
+		    setTimeout(() => {
+		        lotLines = [loadedFiles[0][0]];
+		        loadedFiles.forEach(lines => {
+		            lotLines.push(...lines.slice(1));
+		        });
+		        lotBlob = new Blob([lotLines.join("\n")], { type: "text/plain" });
 
-        function showLotTable() {
-            // Hide file input and generate button
-            document.getElementById("topBar").style.display = "none";
-            document.getElementById("remisesInput").style.display = "none";
-            // Show LOT file in table
-            const container = document.getElementById("remisesContainer");
-            container.innerHTML = "";
-            if (!lotLines || lotLines.length < 2) return;
-            let total = 0;
-            const table = document.createElement("table");
-            const thead = document.createElement("thead");
-            thead.innerHTML = `
-                <tr>
-                    <th>RIO</th>
-                    <th>Operation Type</th>
-                    <th>Beneficiary RIB</th>
-                    <th>Beneficiary Bank</th>
-                    <th>Cheque Number</th>
-                    <th>Sender RIB</th>
-                    <th>Sender Bank</th>
-                    <th>Amount</th>
-                </tr>`;
-            table.appendChild(thead);
-            const tbody = document.createElement("tbody");
-            for (let i = 1; i < lotLines.length; i++) {
-                const values = lotLines[i].split(".");
-                if (values.length !== 8) continue;
-                const row = document.createElement("tr");
-                values.forEach((val, idx) => {
-                    const cell = document.createElement("td");
-                    cell.textContent = val;
-                    row.appendChild(cell);
-                    if (idx === 7) {
-                        const amount = parseFloat(val.replace(",", "."));
-                        if (!isNaN(amount)) total += amount;
-                    }
-                });
-                tbody.appendChild(row);
-            }
-            table.appendChild(tbody);
-            const block = document.createElement("div");
-            block.className = "remise-block";
-            const title = document.createElement("div");
-            title.className = "remise-title";
-            title.textContent = "LOT File: merged.LOT";
-            const totalDiv = document.createElement("div");
-            totalDiv.className = "totalAmount";
-            totalDiv.textContent = "Total Amount: " + total;
-            block.appendChild(title);
-            block.appendChild(table);
-            block.appendChild(totalDiv);
-            container.appendChild(block);
-            // Show download link
-            document.getElementById("downloadLotLink").style.display = "block";
-        }
+		        const firstLine = lotLines[1].split(".");
+		        const beneficiaryBank = firstLine[3];
+		        const operationType = "030";
+		        const lotNumber = String(lotCounter).padStart(3, "0");
+		        const fileName = `${beneficiaryBank}.000.${lotNumber}.${operationType}.LOT`;
+
+		        lotCounter++;
+
+		        // Trigger download with the desired file name
+		        const link = document.createElement("a");
+		        link.href = URL.createObjectURL(lotBlob);
+		        link.download = fileName;
+		        document.body.appendChild(link);
+		        link.click();
+		        document.body.removeChild(link);
+		        URL.revokeObjectURL(link.href);
+
+		        btn.textContent = oldText;
+		        btn.disabled = false;
+
+		        window.location.href = "integrate.html";
+		    }, 500);
+		}
+
     </script>
 </body>
 </html>
