@@ -11,22 +11,28 @@ public class Cheque {
     private Long id;
 
     @Column(name = "cheque_number", nullable = false, unique = true)
-    private String cheque_number;
+    private long cheque_number;
+    
+    @Column(name = "rio", nullable = false)
+    private String rio;
+    
+    @Column(name= "operation_type", nullable = false)
+    private short operation_type;
 
     @Column(name = "beneficiary_rib", nullable = false)
     private String beneficiary_rib;
 
     @Column(name = "beneficiary_bank", nullable = false)
-    private String beneficiary_bank;
+    private short beneficiary_bank;
 
     @Column(name = "sender_rib", nullable = false)
     private String sender_rib;
 
     @Column(name = "sender_bank", nullable = false)
-    private String sender_bank;
+    private short sender_bank;
 
     @Column(name = "amount", nullable = false)
-    private Double amount;
+    private int amount;
 
     // Getters and Setters
     public Long getId() {
@@ -37,12 +43,27 @@ public class Cheque {
         this.id = id;
     }
 
-    public String getCheque_number() {
+    public long getCheque_number() {
         return cheque_number;
     }
+    public short getOperation_type() {
+        return operation_type;
+    }
 
-    public void setCheque_number(String chequeNumber) {
+    public void setOperation_type(short operation_type) {
+        this.operation_type = operation_type;
+    }
+
+    public void setCheque_number(long chequeNumber) {
         this.cheque_number = chequeNumber;
+    }
+    
+    public String getRio() {
+        return rio;
+    }
+
+    public void setRio(String rio) {
+        this.rio = rio;
     }
 
     public String getBeneficiary_rib() {
@@ -53,11 +74,11 @@ public class Cheque {
         this.beneficiary_rib = beneficiaryRib;
     }
 
-    public String getBeneficiary_bank() {
+    public short getBeneficiary_bank() {
         return beneficiary_bank;
     }
 
-    public void setBeneficiary_bank(String beneficiaryBank) {
+    public void setBeneficiary_bank(short beneficiaryBank) {
         this.beneficiary_bank = beneficiaryBank;
     }
 
@@ -69,19 +90,19 @@ public class Cheque {
         this.sender_rib = senderRib;
     }
 
-    public String getSender_bank() {
+    public short getSender_bank() {
         return sender_bank;
     }
 
-    public void setSender_bank(String senderBank) {
+    public void setSender_bank(short senderBank) {
         this.sender_bank = senderBank;
     }
 
-    public Double getAmount() {
+    public int getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(int amount) {
         this.amount = amount;
     }
 }
