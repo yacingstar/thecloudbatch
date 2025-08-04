@@ -25,20 +25,21 @@ import dz.eadn.thecloudbatch.model.Cheque;
 @Configuration
 public class ChequeJob {
 
-    @Bean
-    @StepScope
-    public MultiResourceItemReader<Cheque> multiChequeReader() {
-        MultiResourceItemReader<Cheque> reader = new MultiResourceItemReader<>();
-        File dir = new File(System.getProperty("user.dir"), "remises");
-        File[] files = dir.listFiles((d, name) -> name.endsWith(".cheque"));
-        Resource[] resources = new Resource[files != null ? files.length : 0];
-        for (int i = 0; i < resources.length; i++) {
-            resources[i] = new FileSystemResource(files[i]);
-        }
-        reader.setResources(resources);
-        reader.setDelegate(chequeFileReader());
-        return reader;
-    }
+	@Bean
+	@StepScope
+	public MultiResourceItemReader<Cheque> multiChequeReader(
+	        @Value("#{jobParameters['remisesDir']}") String remisesDir) {
+	    MultiResourceItemReader<Cheque> reader = new MultiResourceItemReader<>();
+	    File dir = new File(remisesDir);
+	    File[] files = dir.listFiles((d, name) -> name.endsWith(".cheque"));
+	    Resource[] resources = new Resource[files != null ? files.length : 0];
+	    for (int i = 0; i < resources.length; i++) {
+	        resources[i] = new FileSystemResource(files[i]);
+	    }
+	    reader.setResources(resources);
+	    reader.setDelegate(chequeFileReader());
+	    return reader;
+	}
 
     @Bean
     @StepScope
