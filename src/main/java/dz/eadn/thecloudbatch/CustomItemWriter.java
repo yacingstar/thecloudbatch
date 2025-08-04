@@ -29,6 +29,11 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
     private final String outputDirectory;
     private ExecutionContext executionContext;
 
+    // Store info for ORD file
+    private String ordBank = null;
+    private String ordOperationType = null;
+    private int ordLotNumber = -1;
+
     public CustomItemWriter() {
         this.outputDirectory = "/output";
     }
@@ -55,8 +60,12 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
             FlatFileItemWriter<Cheque> writer = writers.get(key);
             writer.write(new Chunk<>(cheques));
 
-            // Write ORD file
-            writeOrdFile(cheques.get(0), lotNumber);
+            // Store info for ORD file (use the first group as representative)
+            if (ordBank == null) {
+                ordBank = String.valueOf(cheques.get(0).getBeneficiary_bank());
+                ordOperationType = String.format("%03d", cheques.get(0).getOperation_type());
+                ordLotNumber = lotNumber;
+            }
         }
     }
 
@@ -66,7 +75,8 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
         int sequenceNumber = counter.get();
 
         if (!writers.containsKey(key)) {
-            String filename = String.format("%s.000.lot%03d.%03d.LOT",
+            // Remove "lot" from filename, just use 3-digit lot number
+            String filename = String.format("%s.000.%03d.%03d.LOT",
                     sampleCheque.getBeneficiary_bank(),
                     sequenceNumber,
                     sampleCheque.getOperation_type());
@@ -113,19 +123,19 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
         return sequenceNumber;
     }
 
-    private void writeOrdFile(Cheque cheque, int lotNumber) {
-        short bank = cheque.getBeneficiary_bank();
-        String operationType = String.format("%03d", cheque.getOperation_type());
-        String lotNumStr = String.format("%03d", lotNumber);
+    // Write ORD file only once, after all writing is done
+    private void writeOrdFileOnce() {
+        if (ordBank == null || ordOperationType == null || ordLotNumber == -1) return;
 
+        String lotNumStr = String.format("%03d", ordLotNumber);
         String dateHour = new SimpleDateFormat("yyyyMMddHH").format(new Date());
-        String ordFilename = String.format("%s.%s.%s.ORD", bank, lotNumStr, dateHour);
+        String ordFilename = String.format("%s.%s.%s.ORD", ordBank, lotNumStr, dateHour);
         String ordPath = outputDirectory + "/" + ordFilename;
 
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(ordPath))) {
             writer.write("command_type.lot_number.operation_type");
             writer.newLine();
-            writer.write("INLOT." + lotNumStr + "." + operationType);
+            writer.write("INLOT." + lotNumStr + "." + ordOperationType);
             writer.newLine();
         } catch (IOException e) {
             throw new RuntimeException("Failed to write ORD file: " + ordPath, e);
@@ -152,8 +162,13 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
         for (FlatFileItemWriter<Cheque> writer : writers.values()) {
             writer.close();
         }
+        // Write ORD file only once per job
+        writeOrdFileOnce();
         writers.clear();
         sequenceCounters.clear();
         executionContext = null;
+        ordBank = null;
+        ordOperationType = null;
+        ordLotNumber = -1;
     }
 }
