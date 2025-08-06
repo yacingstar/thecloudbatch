@@ -28,12 +28,12 @@
 <body>
     <h1>Remises Uploader</h1>
     <div class="top-bar" id="topBar">
-        <button onclick="document.getElementById('remisesInput').click()">Add Remises (.cheque)</button>
+        <button onclick="document.getElementById('remisesInput').click()">Add Remises (.remise)</button>
         <div class="right-btn">
             <button id="generateLotBtn" onclick="generateLotFile()" disabled>Generate LOT file</button>
         </div>
     </div>
-    <input id="remisesInput" type="file" accept=".cheque" multiple onchange="handleFiles(event)">
+    <input id="remisesInput" type="file" accept=".remise" multiple onchange="handleFiles(event)">
     <div class="upload-status" id="uploadStatus"></div>
     <div id="remisesContainer"></div>
     <script>

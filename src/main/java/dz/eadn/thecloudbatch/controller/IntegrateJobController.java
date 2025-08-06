@@ -10,8 +10,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.nio.file.*;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @RestController
@@ -41,12 +39,9 @@ public class IntegrateJobController {
 	            if (!file.isEmpty()) {
 	                String originalFileName = file.getOriginalFilename();
 	                
-	                // Generate new filename with timestamp
-	                String newFileName = generateNewFileName(originalFileName);
-	                
-	                Path filePath = uploadPath.resolve(newFileName);
+	                Path filePath = uploadPath.resolve(originalFileName);
 	                Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-	                uploadedFiles.add(newFileName);
+	                uploadedFiles.add(originalFileName);
 	            }
 	        }
 	        
@@ -63,19 +58,7 @@ public class IntegrateJobController {
 	    }
 	}
 
-	private String generateNewFileName(String originalFileName) {
-	    // Remove extension from original filename
-	    String baseFileName = originalFileName;
-	    if (baseFileName.contains(".")) {
-	        baseFileName = baseFileName.substring(0, baseFileName.lastIndexOf("."));
-	    }
-	    
-	    // Generate timestamp in ddmmyearhhmm format
-	    String dateHour = LocalDateTime.now().format(DateTimeFormatter.ofPattern("ddMMyyyyHHmm"));
-	    
-	    // Build new filename: originalfilename.datehour.remise
-	    return String.format("%s.%s.remise", baseFileName, dateHour);
-	}
+
 
 	@GetMapping("/api/remises/list")
 	public ResponseEntity<List<Map<String, String>>> listRemises() {

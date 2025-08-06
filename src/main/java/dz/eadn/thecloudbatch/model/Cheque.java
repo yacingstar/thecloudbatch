@@ -34,6 +34,9 @@ public class Cheque {
     @Column(name = "amount", nullable = false)
     private int amount;
 
+    @Column(name = "status", nullable = false)
+    private String status = "to be integrated";
+
     // Getters and Setters
     public Long getId() {
         return id;
@@ -46,6 +49,7 @@ public class Cheque {
     public long getCheque_number() {
         return cheque_number;
     }
+    
     public short getOperation_type() {
         return operation_type;
     }
@@ -104,5 +108,13 @@ public class Cheque {
 
     public void setAmount(int amount) {
         this.amount = amount;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }

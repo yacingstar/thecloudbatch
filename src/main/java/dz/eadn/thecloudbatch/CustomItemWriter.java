@@ -29,6 +29,9 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
     private final String outputDirectory;
     private ExecutionContext executionContext;
 
+    // Global lot sequence counter (001-999)
+    private static final AtomicInteger globalLotSequence = new AtomicInteger(1);
+
     // Store info for ORD file
     private String ordBank = null;
     private String ordOperationType = null;
@@ -71,15 +74,16 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
 
     // Returns the lot number used for the LOT file
     private int getOrCreateWriter(String key, Cheque sampleCheque) {
-        AtomicInteger counter = sequenceCounters.computeIfAbsent(key, x -> new AtomicInteger(1));
-        int sequenceNumber = counter.get();
-
         if (!writers.containsKey(key)) {
-            // Remove "lot" from filename, just use 3-digit lot number
-            String filename = String.format("%s.000.%03d.%03d.LOT",
-                    sampleCheque.getBeneficiary_bank(),
-                    sequenceNumber,
-                    sampleCheque.getOperation_type());
+            // Get next global lot sequence number (001-999, then cycles back to 001)
+            int lotSequence = globalLotSequence.getAndUpdate(current -> 
+                current >= 999 ? 1 : current + 1);
+            
+            // New filename format: (banque remettante).000.(numéro de lot).(type d'opération).LOT
+            String filename = String.format("%03d.000.%03d.%03d.LOT",
+                    sampleCheque.getBeneficiary_bank(),  // banque remettante
+                    lotSequence,                         // numéro de lot (001-999)
+                    sampleCheque.getOperation_type());   // type d'opération
 
             String fullPath = outputDirectory + "/" + filename;
 
@@ -118,9 +122,12 @@ public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
             }
 
             writers.put(key, writer);
-            counter.incrementAndGet();
+            
+            // Store the lot sequence for this writer
+            sequenceCounters.put(key, new AtomicInteger(lotSequence));
         }
-        return sequenceNumber;
+        
+        return sequenceCounters.get(key).get();
     }
 
     // Write ORD file only once, after all writing is done

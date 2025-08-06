@@ -10,14 +10,18 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider;
 import org.springframework.batch.item.database.JdbcBatchItemWriter;
+import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
+import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
 import org.springframework.batch.item.file.*;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
+import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.*;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import dz.eadn.thecloudbatch.model.Cheque;
@@ -25,22 +29,24 @@ import dz.eadn.thecloudbatch.model.Cheque;
 @Configuration
 public class ChequeJob {
 
-	@Bean
-	@StepScope
-	public MultiResourceItemReader<Cheque> multiChequeReader(
-	        @Value("#{jobParameters['remisesDir']}") String remisesDir) {
-	    MultiResourceItemReader<Cheque> reader = new MultiResourceItemReader<>();
-	    File dir = new File(remisesDir);
-	    File[] files = dir.listFiles((d, name) -> name.endsWith(".cheque"));
-	    Resource[] resources = new Resource[files != null ? files.length : 0];
-	    for (int i = 0; i < resources.length; i++) {
-	        resources[i] = new FileSystemResource(files[i]);
-	    }
-	    reader.setResources(resources);
-	    reader.setDelegate(chequeFileReader());
-	    return reader;
-	}
-
+	// dbStep
+    @Bean
+    @StepScope
+    public MultiResourceItemReader<Cheque> multiChequeReader(
+            @Value("#{jobParameters['remisesDir']}") String remisesDir) {
+        MultiResourceItemReader<Cheque> reader = new MultiResourceItemReader<>();
+        File dir = new File(remisesDir);
+        File[] files = dir.listFiles((d, name) -> name.endsWith(".remise") && !name.endsWith(".remise.DONE"));
+        Resource[] resources = new Resource[files != null ? files.length : 0];
+        for (int i = 0; i < resources.length; i++) {
+            resources[i] = new FileSystemResource(files[i]);
+        }
+        reader.setResources(resources);
+        reader.setDelegate(chequeFileReader());
+        return reader;
+    }
+    
+    // dbStep
     @Bean
     @StepScope
     public FlatFileItemReader<Cheque> chequeFileReader() {
@@ -58,6 +64,19 @@ public class ChequeJob {
                 .build();
     }
 
+    // fileStep
+    @Bean
+    @StepScope
+    public JdbcCursorItemReader<Cheque> databaseChequeReader(DataSource dataSource) {
+        return new JdbcCursorItemReaderBuilder<Cheque>()
+                .name("databaseChequeReader")
+                .dataSource(dataSource)
+                .sql("SELECT * FROM cheques WHERE status = 'to be integrated' ORDER BY id")
+                .rowMapper(new BeanPropertyRowMapper<>(Cheque.class))
+                .build();
+    }
+
+    // dbStep
     @Bean
     public JdbcBatchItemWriter<Cheque> chequeJdbcWriter(DataSource dataSource) {
         return new JdbcBatchItemWriterBuilder<Cheque>()
@@ -72,7 +91,8 @@ public class ChequeJob {
                         beneficiary_bank,
                         sender_rib,
                         sender_bank,
-                        amount
+                        amount,
+                        status
                     ) VALUES (
                         cheque_sequence.NEXTVAL,
                         :cheque_number,
@@ -82,13 +102,15 @@ public class ChequeJob {
                         :beneficiary_bank,
                         :sender_rib,
                         :sender_bank,
-                        :amount
+                        :amount,
+                        :status
                     )
                 """)
                 .dataSource(dataSource)
                 .build();
     }
 
+    // fileStep
     @Bean
     @StepScope
     public CustomItemWriter dynamicChequeFileWriter(
@@ -96,17 +118,61 @@ public class ChequeJob {
         return new CustomItemWriter(outputDirectory);
     }
 
+    // dbStep
+    @Bean
+    @StepScope
+    public ItemProcessor<Cheque, Cheque> chequeProcessor() {
+        return item -> {
+            // Set default status for new cheques
+            if (item.getStatus() == null || item.getStatus().isEmpty()) {
+                item.setStatus("to be integrated");
+            }
+            return item;
+        };
+    }
+
+//    // fileStep
+//    @Bean
+//    @StepScope
+//    public ItemProcessor<Cheque, Cheque> markIntegratedProcessor() {
+//        return item -> {
+//            item.setStatus("Integrated");
+//            return item;
+//        };
+//    }
+
+    
+    @Bean
+    @StepScope
+    public FileMarkingTasklet fileMarkingTasklet(
+            @Value("#{jobParameters['remisesDir']}") String remisesDir) {
+        return new FileMarkingTasklet(remisesDir);
+    }
+
     @Bean
     public Step dbStep(
             JobRepository jobRepository,
             PlatformTransactionManager transactionManager,
             MultiResourceItemReader<Cheque> multiChequeReader,
+            ItemProcessor<Cheque, Cheque> chequeProcessor,
             JdbcBatchItemWriter<Cheque> chequeJdbcWriter
     ) {
         return new StepBuilder("dbStep", jobRepository)
                 .<Cheque, Cheque>chunk(10, transactionManager)
                 .reader(multiChequeReader)
+                .processor(chequeProcessor)
                 .writer(chequeJdbcWriter)
+                .build();
+    }
+
+    @Bean
+    public Step markFilesStep(
+            JobRepository jobRepository,
+            PlatformTransactionManager transactionManager,
+            FileMarkingTasklet fileMarkingTasklet
+    ) {
+        return new StepBuilder("markFilesStep", jobRepository)
+                .tasklet(fileMarkingTasklet, transactionManager)
                 .build();
     }
 
@@ -114,12 +180,14 @@ public class ChequeJob {
     public Step fileStep(
             JobRepository jobRepository,
             PlatformTransactionManager transactionManager,
-            MultiResourceItemReader<Cheque> multiChequeReader,
+            JdbcCursorItemReader<Cheque> databaseChequeReader,
+//            ItemProcessor<Cheque, Cheque> markIntegratedProcessor,
             CustomItemWriter dynamicChequeFileWriter
     ) {
         return new StepBuilder("fileStep", jobRepository)
                 .<Cheque, Cheque>chunk(10, transactionManager)
-                .reader(multiChequeReader)
+                .reader(databaseChequeReader)
+//                .processor(markIntegratedProcessor)
                 .writer(dynamicChequeFileWriter)
                 .build();
     }
@@ -128,10 +196,12 @@ public class ChequeJob {
     public Job chequeJobThing(
             JobRepository jobRepository,
             Step dbStep,
+            Step markFilesStep,
             Step fileStep
     ) {
         return new JobBuilder("chequeJob", jobRepository)
                 .start(dbStep)
+                .next(markFilesStep)
                 .next(fileStep)
                 .build();
     }
