@@ -155,47 +155,11 @@
         }
 
         function generateLotFile() {
-            // Use the latest uploaded directory if available, else use the last session dir
-            if (!serverDirectoryPath) {
-                // Try to get the latest session dir from the displayed remises
-                fetch('/api/remises/list')
-                    .then(response => response.json())
-                    .then(remises => {
-                        if (remises.length === 0) return;
-                        // Find the session dir of the last uploaded remise
-                        const lastSession = remises[remises.length - 1].session;
-                        const dir = '/uploads/remises/' + lastSession;
-                        launchJob(dir);
-                    });
-            } else {
-                launchJob(serverDirectoryPath);
-            }
-        }
-
-        function launchJob(remisesDir) {
-            const btn = document.getElementById("generateLotBtn");
-            btn.disabled = true;
-            const oldText = btn.textContent;
-            btn.textContent = "Launching Job...";
-
-            fetch("/runJob", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ remisesDir: remisesDir })
-            })
-            .then(response => response.text())
-            .then(result => {
-                alert(result);
-            })
-            .catch(error => {
-                alert("Error launching job: " + error.message);
-            })
-            .finally(() => {
-                btn.textContent = oldText;
-                btn.disabled = false;
-            });
+            // Get the remises directory to pass to monitoring page
+            const remisesDir = serverDirectoryPath || '/uploads/remises/';
+            
+            // Navigate to monitoring page instead of showing alert
+            window.location.href = `/monitoring.html?remisesDir=${encodeURIComponent(remisesDir)}`;
         }
     </script>
 </body>

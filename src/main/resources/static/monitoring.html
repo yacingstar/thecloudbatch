@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Job Monitoring - LOT File Generation</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px; 
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .step {
+            margin-bottom: 25px;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #ddd;
+        }
+        .step.pending {
+            background-color: #f8f9fa;
+            border-left-color: #6c757d;
+        }
+        .step.running {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        .step.success {
+            background-color: #d4edda;
+            border-left-color: #28a745;
+        }
+        .step.error {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+        }
+        .step-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .step-description {
+            color: #666;
+            margin-bottom: 15px;
+        }
+        .step-status {
+            font-weight: bold;
+        }
+        .step-details {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: rgba(0,0,0,0.05);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-line;
+        }
+        .loading-indicator {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+        .back-button {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .back-button button {
+            padding: 10px 30px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .back-button button:hover {
+            background-color: #0056b3;
+        }
+        .error-details {
+            color: #721c24;
+            margin-top: 10px;
+        }
+        .success-details {
+            color: #155724;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>LOT File Generation Progress</h1>
+            <p>Monitoring job execution and file processing...</p>
+        </div>
+
+        <div id="step1" class="step pending">
+            <div class="step-title">
+                <span id="step1-icon">⏳</span>
+                Step 1: Database Integration
+            </div>
+            <div class="step-description">
+                Uploading remise files to the database and marking them as processed
+            </div>
+            <div id="step1-status" class="step-status">Waiting to start...</div>
+            <div id="step1-details" class="step-details" style="display: none;"></div>
+        </div>
+
+        <div id="step2" class="step pending">
+            <div class="step-title">
+                <span id="step2-icon">⏳</span>
+                Step 2: LOT File Generation
+            </div>
+            <div class="step-description">
+                Generating LOT and ORD files from database records
+            </div>
+            <div id="step2-status" class="step-status">Pending database integration...</div>
+            <div id="step2-details" class="step-details" style="display: none;"></div>
+        </div>
+
+        <div id="step3" class="step pending">
+            <div class="step-title">
+                <span id="step3-icon">⏳</span>
+                Step 3: UAP Response Monitoring
+            </div>
+            <div class="step-description">
+                Waiting for UAP to process the ORD file and generating CRL response
+            </div>
+            <div id="step3-status" class="step-status">Pending LOT file generation...</div>
+            <div id="step3-details" class="step-details" style="display: none;"></div>
+        </div>
+
+        <div class="back-button">
+            <button onclick="goBack()" id="backButton" style="display: none;">Back to Main Page</button>
+        </div>
+    </div>
+
+    <script>
+        let jobId = null;
+        let pollingInterval = null;
+
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const remisesDir = urlParams.get('remisesDir');
+            
+            if (remisesDir) {
+                startJobMonitoring(remisesDir);
+            } else {
+                updateStepError('step1', 'Error: No remises directory specified');
+                showBackButton();
+            }
+        };
+
+        function startJobMonitoring(remisesDir) {
+            updateStepRunning('step1', 'Starting database integration...');
+            
+            fetch("/api/job/start", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ remisesDir: remisesDir })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    jobId = data.jobId;
+                    updateStepDetails('step1', 'Job started with ID: ' + jobId);
+                    startPolling();
+                } else {
+                    updateStepError('step1', 'Failed to start job: ' + data.message);
+                    showBackButton();
+                }
+            })
+            .catch(error => {
+                updateStepError('step1', 'Error starting job: ' + error.message);
+                showBackButton();
+            });
+        }
+
+        function startPolling() {
+            pollingInterval = setInterval(() => {
+                if (jobId) {
+                    checkJobStatus();
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        function checkJobStatus() {
+            fetch(`/api/job/status/${jobId}`)
+                .then(response => response.json())
+                .then(data => {
+                    updateJobStatus(data);
+                })
+                .catch(error => {
+                    console.error('Error checking job status:', error);
+                });
+        }
+
+        function updateJobStatus(jobData) {
+            // Update Step 1 (Database Integration)
+            if (jobData.dbStepStatus) {
+                if (jobData.dbStepStatus === 'COMPLETED') {
+                    updateStepSuccess('step1', 'Database integration completed successfully');
+                    let details = `Records processed: ${jobData.dbStepDetails?.recordsProcessed || 0}`;
+                    if (jobData.dbStepDetails?.filesMarked) {
+                        details += `\nFiles marked as DONE: ${jobData.dbStepDetails.filesMarked}`;
+                    }
+                    updateStepDetails('step1', details);
+                } else if (jobData.dbStepStatus === 'FAILED') {
+                    updateStepError('step1', 'Database integration failed');
+                    updateStepDetails('step1', jobData.dbStepError || 'Unknown error occurred');
+                    stopPolling();
+                    showBackButton();
+                    return; // Stop here if DB step failed
+                } else if (jobData.dbStepStatus === 'STARTED') {
+                    updateStepRunning('step1', 'Processing remise files...');
+                }
+            }
+
+            // Update Step 2 (File Generation)
+            if (jobData.fileStepStatus) {
+                if (jobData.fileStepStatus === 'COMPLETED') {
+                    updateStepSuccess('step2', 'LOT and ORD files generated successfully');
+                    let details = '';
+                    if (jobData.fileStepDetails?.lotFiles) {
+                        details += `LOT files created: ${jobData.fileStepDetails.lotFiles.join(', ')}`;
+                    }
+                    if (jobData.fileStepDetails?.ordFiles) {
+                        details += `\nORD files created: ${jobData.fileStepDetails.ordFiles.join(', ')}`;
+                    }
+                    if (jobData.fileStepDetails?.outputDir) {
+                        details += `\nOutput directory: ${jobData.fileStepDetails.outputDir}`;
+                    }
+                    updateStepDetails('step2', details);
+                    
+                    // Start UAP monitoring display
+                    startUAPMonitoring(jobData.fileStepDetails?.ordFiles || []);
+                } else if (jobData.fileStepStatus === 'FAILED') {
+                    updateStepError('step2', 'LOT file generation failed');
+                    updateStepDetails('step2', jobData.fileStepError || 'Unknown error occurred');
+                    stopPolling();
+                    showBackButton();
+                    return;
+                } else if (jobData.fileStepStatus === 'STARTED') {
+                    updateStepRunning('step2', 'Generating LOT and ORD files...');
+                }
+            }
+
+            // Update Step 3 (UAP Response)
+            if (jobData.uapStatus) {
+                if (jobData.uapStatus === 'COMPLETED') {
+                    updateStepSuccess('step3', 'UAP responded successfully - CRL files generated');
+                    let details = '';
+                    if (jobData.uapDetails?.crlFiles) {
+                        details += `CRL files created: ${jobData.uapDetails.crlFiles.join(', ')}`;
+                    }
+                    details += '\nNo syntax errors detected';
+                    updateStepDetails('step3', details);
+                    stopPolling();
+                    showBackButton();
+                } else if (jobData.uapStatus === 'FAILED') {
+                    updateStepError('step3', 'UAP response failed or timeout');
+                    updateStepDetails('step3', jobData.uapError || 'UAP did not respond within expected timeframe');
+                    stopPolling();
+                    showBackButton();
+                }
+            }
+        }
+
+        function startUAPMonitoring(ordFiles) {
+            updateStepRunning('step3', 'Waiting for UAP to respond...');
+            let details = '';
+            if (ordFiles.length > 0) {
+                details += `Monitoring ORD files: ${ordFiles.join(', ')}`;
+            }
+            details += '\nWaiting for UAP to process...';
+            updateStepDetails('step3', details);
+        }
+
+        function updateStepRunning(stepId, message) {
+            const step = document.getElementById(stepId);
+            const status = document.getElementById(stepId + '-status');
+            const icon = document.getElementById(stepId + '-icon');
+            
+            step.className = 'step running';
+            status.textContent = message;
+            icon.innerHTML = '<div class="loading-indicator"></div>';
+        }
+
+        function updateStepSuccess(stepId, message) {
+            const step = document.getElementById(stepId);
+            const status = document.getElementById(stepId + '-status');
+            const icon = document.getElementById(stepId + '-icon');
+            
+            step.className = 'step success';
+            status.innerHTML = '<span class="success-details">' + message + '</span>';
+            icon.textContent = '✅';
+        }
+
+        function updateStepError(stepId, message) {
+            const step = document.getElementById(stepId);
+            const status = document.getElementById(stepId + '-status');
+            const icon = document.getElementById(stepId + '-icon');
+            
+            step.className = 'step error';
+            status.innerHTML = '<span class="error-details">' + message + '</span>';
+            icon.textContent = '❌';
+        }
+
+        function updateStepDetails(stepId, details) {
+            const detailsDiv = document.getElementById(stepId + '-details');
+            detailsDiv.textContent = details;
+            detailsDiv.style.display = 'block';
+        }
+
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        function showBackButton() {
+            document.getElementById('backButton').style.display = 'inline-block';
+        }
+
+        function goBack() {
+            window.location.href = '/';
+        }
+
+        // Clean up polling when page is closed
+        window.addEventListener('beforeunload', function() {
+            stopPolling();
+        });
+    </script>
+</body>
+</html>
