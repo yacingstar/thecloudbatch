@@ -71,10 +71,23 @@ public class ChequeJob {
         return new JdbcCursorItemReaderBuilder<Cheque>()
                 .name("databaseChequeReader")
                 .dataSource(dataSource)
-                .sql("SELECT * FROM cheques WHERE status = 'to be integrated' ORDER BY id")
+                .sql("SELECT * FROM cheques ORDER BY id")
                 .rowMapper(new BeanPropertyRowMapper<>(Cheque.class))
                 .build();
     }
+    
+    @Bean
+    @StepScope
+    public ItemProcessor<Cheque, Cheque> toBeIntegratedProcessor() {
+        return item -> {
+            if ("to be integrated".equals(item.getStatus())) {
+                return item;
+            }
+            return null; // Skip items that don't match
+        };
+    }
+
+
 
     // dbStep
     @Bean
@@ -115,8 +128,9 @@ public class ChequeJob {
     @StepScope
     public CustomItemWriter dynamicChequeFileWriter(
             @Value("#{jobParameters['outputDirectory'] ?: '/output'}") String outputDirectory) {
-        return new CustomItemWriter(outputDirectory);
+        return new CustomItemWriter();
     }
+    
 
     // dbStep
     @Bean
@@ -132,15 +146,6 @@ public class ChequeJob {
     }
 
 //    // fileStep
-//    @Bean
-//    @StepScope
-//    public ItemProcessor<Cheque, Cheque> markIntegratedProcessor() {
-//        return item -> {
-//            item.setStatus("Integrated");
-//            return item;
-//        };
-//    }
-
     
     @Bean
     @StepScope
@@ -175,34 +180,66 @@ public class ChequeJob {
                 .tasklet(fileMarkingTasklet, transactionManager)
                 .build();
     }
+    
+    @Bean
+    @StepScope
+    public JdbcBatchItemWriter<Cheque> statusUpdateWriter(DataSource dataSource) {
+        return new JdbcBatchItemWriterBuilder<Cheque>()
+                .itemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<>())
+                .sql("UPDATE cheques SET status = 'integrated' WHERE id = :id")
+                .dataSource(dataSource)
+                .build();
+    }
+
+    @Bean
+    public Step updateStatusStep(
+            JobRepository jobRepository,
+            PlatformTransactionManager transactionManager,
+            JdbcCursorItemReader<Cheque> databaseChequeReader,
+            ItemProcessor<Cheque, Cheque> toBeIntegratedProcessor,
+            JdbcBatchItemWriter<Cheque> statusUpdateWriter
+    ) {
+        return new StepBuilder("updateStatusStep", jobRepository)
+                .<Cheque, Cheque>chunk(10, transactionManager)
+                .reader(databaseChequeReader)
+                .processor(toBeIntegratedProcessor)
+                .writer(statusUpdateWriter)
+                .build();
+    }
+
 
     @Bean
     public Step fileStep(
             JobRepository jobRepository,
             PlatformTransactionManager transactionManager,
             JdbcCursorItemReader<Cheque> databaseChequeReader,
-//            ItemProcessor<Cheque, Cheque> markIntegratedProcessor,
+            ItemProcessor<Cheque, Cheque> toBeIntegratedProcessor,
             CustomItemWriter dynamicChequeFileWriter
     ) {
         return new StepBuilder("fileStep", jobRepository)
                 .<Cheque, Cheque>chunk(10, transactionManager)
                 .reader(databaseChequeReader)
-//                .processor(markIntegratedProcessor)
+                .processor(toBeIntegratedProcessor)
                 .writer(dynamicChequeFileWriter)
                 .build();
     }
+    
+
+    
 
     @Bean
     public Job chequeJobThing(
             JobRepository jobRepository,
             Step dbStep,
             Step markFilesStep,
-            Step fileStep
+            Step fileStep,
+            Step updateStatusStep
     ) {
         return new JobBuilder("chequeJob", jobRepository)
                 .start(dbStep)
                 .next(markFilesStep)
                 .next(fileStep)
+                .next(updateStatusStep) 
                 .build();
     }
 }

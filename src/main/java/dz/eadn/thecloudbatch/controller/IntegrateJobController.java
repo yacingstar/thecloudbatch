@@ -16,21 +16,24 @@ import java.util.concurrent.ConcurrentHashMap;
 public class IntegrateJobController {
 
     private static final String UPLOAD_BASE_DIR = "uploads/remises/";
-    private static final String OUTPUT_DIR = "output/";
-    private static final String ORD_DIR = "ord/";
-    private static final String CRL_DIR = "crl/";
+    private static final String PROJECT_ROOT = System.getProperty("user.dir");
+    private static final String OUTPUT_DIR = PROJECT_ROOT + "/output/";
+    private static final String ORD_DIR = PROJECT_ROOT + "/ord/";
+    private static final String CRL_DIR = PROJECT_ROOT + "/crl/";
 
     private JobLauncher jobLauncher;
     private Job chequeJobThing;
+    private Job craJob; // Assuming this is defined elsewhere in your application
     private JobRepository jobRepository;
     
     // Store job execution details for monitoring
     private final Map<String, JobStatusInfo> jobStatusMap = new ConcurrentHashMap<>();
 
-    public IntegrateJobController(JobLauncher jobLauncher, Job chequeJobThing, JobRepository jobRepository) {
+    public IntegrateJobController(JobLauncher jobLauncher, Job chequeJobThing, JobRepository jobRepository, Job craJob) {
         this.jobLauncher = jobLauncher;
         this.chequeJobThing = chequeJobThing;
         this.jobRepository = jobRepository;
+        this.craJob = craJob;
         
         // Ensure directories exist
         createDirectories();
@@ -352,6 +355,29 @@ public class IntegrateJobController {
     @GetMapping("/monitoring")
     public String monitoringPage() {
         return "monitoring";
+    }
+
+    @PostMapping("/api/job/start-cra")
+    public ResponseEntity<Map<String, Object>> startCraJob() {
+        try {
+            JobParameters jobParameters = new JobParametersBuilder()
+                    .addLong("timestamp", System.currentTimeMillis())
+                    .toJobParameters();
+            
+            JobExecution execution = jobLauncher.run(craJob, jobParameters);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("jobId", execution.getId());
+            response.put("message", "CRA job started successfully");
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to start CRA job: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
     }
 
     // Inner class to track job status

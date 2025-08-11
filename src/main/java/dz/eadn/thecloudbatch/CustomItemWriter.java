@@ -15,167 +15,143 @@ import dz.eadn.thecloudbatch.model.Cheque;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
-import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class CustomItemWriter implements ItemWriter<Cheque>, ItemStream {
 
-    private final Map<String, FlatFileItemWriter<Cheque>> writers = new ConcurrentHashMap<>();
-    private final Map<String, AtomicInteger> sequenceCounters = new ConcurrentHashMap<>();
     private final String outputDirectory;
-    private ExecutionContext executionContext;
+    private final String fileExtension;
+    private final String[] fieldNames;
+    private final String headerFormat;
+    private final String delimiter;
 
-    // Global lot sequence counter (001-999)
+    private final Map<String, FlatFileItemWriter<Cheque>> writers = new HashMap<>();
     private static final AtomicInteger globalLotSequence = new AtomicInteger(1);
+    private ExecutionContext executionContext;
+    
+    // For ORD file - only created if first file is LOT
+    private String ordInfo = null;
+    private boolean isFirstFileLot = false;
 
-    // Store info for ORD file
-    private String ordBank = null;
-    private String ordOperationType = null;
-    private int ordLotNumber = -1;
-
+    // Default constructor for LOT files
     public CustomItemWriter() {
-        this.outputDirectory = "/output";
+        this("/output", "LOT",
+             new String[]{"rio", "operation_type", "beneficiary_rib", "beneficiary_bank", "cheque_number", "sender_rib", "sender_bank", "amount"},
+             "rio.operation_type.beneficiary_rib.beneficiary_bank.cheque_number.sender_rib.sender_bank.amount",
+             ".");
     }
 
-    public CustomItemWriter(String outputDirectory) {
+    // Configurable constructor for any file type
+    public CustomItemWriter(String outputDirectory, String fileExtension, String[] fieldNames, String headerFormat, String delimiter) {
         this.outputDirectory = outputDirectory;
+        this.fileExtension = fileExtension;
+        this.fieldNames = fieldNames;
+        this.headerFormat = headerFormat;
+        this.delimiter = delimiter;
     }
 
     @Override
     public void write(Chunk<? extends Cheque> chunk) throws Exception {
-        Map<String, List<Cheque>> groupedCheques = new HashMap<>();
-
+        Map<String, List<Cheque>> groups = new HashMap<>();
+        
         for (Cheque cheque : chunk) {
             String key = cheque.getBeneficiary_bank() + "_" + cheque.getOperation_type();
-            groupedCheques.computeIfAbsent(key, k -> new ArrayList<>()).add(cheque);
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(cheque);
         }
 
-        for (Map.Entry<String, List<Cheque>> entry : groupedCheques.entrySet()) {
-            String key = entry.getKey();
-            List<Cheque> cheques = entry.getValue();
-
-            // Write LOT file and get lot number
-            int lotNumber = getOrCreateWriter(key, cheques.get(0));
-            FlatFileItemWriter<Cheque> writer = writers.get(key);
-            writer.write(new Chunk<>(cheques));
-
-            // Store info for ORD file (use the first group as representative)
-            if (ordBank == null) {
-                ordBank = String.valueOf(cheques.get(0).getBeneficiary_bank());
-                ordOperationType = String.format("%03d", cheques.get(0).getOperation_type());
-                ordLotNumber = lotNumber;
-            }
+        for (Map.Entry<String, List<Cheque>> entry : groups.entrySet()) {
+            FlatFileItemWriter<Cheque> writer = getOrCreateWriter(entry.getKey(), entry.getValue().get(0));
+            writer.write(new Chunk<>(entry.getValue()));
         }
     }
 
-    // Returns the lot number used for the LOT file
-    private int getOrCreateWriter(String key, Cheque sampleCheque) {
+    private FlatFileItemWriter<Cheque> getOrCreateWriter(String key, Cheque sample) {
         if (!writers.containsKey(key)) {
-            // Get next global lot sequence number (001-999, then cycles back to 001)
-            int lotSequence = globalLotSequence.getAndUpdate(current -> 
-                current >= 999 ? 1 : current + 1);
+            int lotNumber = globalLotSequence.getAndUpdate(current -> current >= 999 ? 1 : current + 1);
+
+            String filename = new FileNameBuilder()
+                    .addBeneficiaryBank(sample.getBeneficiary_bank())
+                    .addPart("000")
+                    .addLotNumber(lotNumber)
+                    .addOperationType(sample.getOperation_type())
+                    .extension(fileExtension)
+                    .build();
+
+            // Check if this is the first file and if it's a LOT file
+            if (writers.isEmpty() && "LOT".equals(fileExtension)) {
+                isFirstFileLot = true;
+                ordInfo = sample.getBeneficiary_bank() + "|" + lotNumber + "|" + sample.getOperation_type();
+            }
+
+            DelimitedLineAggregator<Cheque> aggregator = new DelimitedLineAggregator<>();
+            aggregator.setDelimiter(delimiter);
             
-            // New filename format: (banque remettante).000.(numéro de lot).(type d'opération).LOT
-            String filename = String.format("%03d.000.%03d.%03d.LOT",
-                    sampleCheque.getBeneficiary_bank(),  // banque remettante
-                    lotSequence,                         // numéro de lot (001-999)
-                    sampleCheque.getOperation_type());   // type d'opération
-
-            String fullPath = outputDirectory + "/" + filename;
-
-            DelimitedLineAggregator<Cheque> lineAggregator = new DelimitedLineAggregator<>();
-            lineAggregator.setDelimiter(".");
-            BeanWrapperFieldExtractor<Cheque> fieldExtractor = new BeanWrapperFieldExtractor<>();
-            fieldExtractor.setNames(new String[]{
-                "rio", "operation_type", "beneficiary_rib",
-                "beneficiary_bank", "cheque_number", "sender_rib",
-                "sender_bank", "amount"
-            });
-            lineAggregator.setFieldExtractor(fieldExtractor);
+            BeanWrapperFieldExtractor<Cheque> extractor = new BeanWrapperFieldExtractor<>();
+            extractor.setNames(fieldNames);
+            aggregator.setFieldExtractor(extractor);
 
             FlatFileItemWriter<Cheque> writer = new FlatFileItemWriterBuilder<Cheque>()
-                    .name("dynamicChequeWriter_" + key)
-                    .resource(new FileSystemResource(fullPath))
-                    .lineAggregator(lineAggregator)
-                    .headerCallback(writer1 -> {
-                        try {
-                            writer1.write("rio.operation_type.beneficiary_rib.beneficiary_bank.cheque_number.sender_rib.sender_bank.amount");
-                        } catch (Exception e) {
-                            throw new RuntimeException("Failed to write header", e);
-                        }
-                    })
-                    .append(false)
+                    .name("writer_" + key)
+                    .resource(new FileSystemResource(outputDirectory + "/" + filename))
+                    .lineAggregator(aggregator)
+                    .headerCallback(w -> w.write(headerFormat))
                     .shouldDeleteIfExists(true)
                     .build();
 
             try {
                 writer.afterPropertiesSet();
-                if (executionContext != null) {
-                    writer.open(executionContext);
-                }
+                if (executionContext != null) writer.open(executionContext);
             } catch (Exception e) {
-                throw new RuntimeException("Failed to initialize writer for " + filename, e);
+                throw new RuntimeException("Failed to create writer", e);
             }
 
             writers.put(key, writer);
-            
-            // Store the lot sequence for this writer
-            sequenceCounters.put(key, new AtomicInteger(lotSequence));
         }
-        
-        return sequenceCounters.get(key).get();
+        return writers.get(key);
     }
 
-    // Write ORD file only once, after all writing is done
-    private void writeOrdFileOnce() {
-        if (ordBank == null || ordOperationType == null || ordLotNumber == -1) return;
+    private void writeOrdFile() {
+        // Only write ORD file if first file was LOT
+        if (!isFirstFileLot || ordInfo == null) return;
 
-        String lotNumStr = String.format("%03d", ordLotNumber);
-        String dateHour = new SimpleDateFormat("yyyyMMddHH").format(new Date());
-        String ordFilename = String.format("%s.%s.%s.ORD", ordBank, lotNumStr, dateHour);
-        String ordPath = outputDirectory + "/" + ordFilename;
+        String[] parts = ordInfo.split("\\|");
+        String ordFilename = new FileNameBuilder()
+                .addPart(parts[0])
+                .addLotNumber(Integer.parseInt(parts[1]))
+                .addTimestamp()
+                .extension("ORD")
+                .build();
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(ordPath))) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputDirectory + "/" + ordFilename))) {
             writer.write("command_type.lot_number.operation_type");
             writer.newLine();
-            writer.write("INLOT." + lotNumStr + "." + ordOperationType);
+            writer.write("INLOT." + String.format("%03d", Integer.parseInt(parts[1])) + "." + String.format("%03d", Integer.parseInt(parts[2])));
             writer.newLine();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to write ORD file: " + ordPath, e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to write ORD file", e);
         }
     }
 
     @Override
     public void open(ExecutionContext executionContext) throws ItemStreamException {
         this.executionContext = executionContext;
-        for (FlatFileItemWriter<Cheque> writer : writers.values()) {
-            writer.open(executionContext);
-        }
+        writers.values().forEach(w -> w.open(executionContext));
     }
 
     @Override
     public void update(ExecutionContext executionContext) throws ItemStreamException {
-        for (FlatFileItemWriter<Cheque> writer : writers.values()) {
-            writer.update(executionContext);
-        }
+        writers.values().forEach(w -> w.update(executionContext));
     }
 
     @Override
     public void close() throws ItemStreamException {
-        for (FlatFileItemWriter<Cheque> writer : writers.values()) {
-            writer.close();
-        }
-        // Write ORD file only once per job
-        writeOrdFileOnce();
+        writers.values().forEach(FlatFileItemWriter::close);
+        writeOrdFile(); // Only writes if first file was LOT
         writers.clear();
-        sequenceCounters.clear();
+        ordInfo = null;
+        isFirstFileLot = false;
         executionContext = null;
-        ordBank = null;
-        ordOperationType = null;
-        ordLotNumber = -1;
     }
 }

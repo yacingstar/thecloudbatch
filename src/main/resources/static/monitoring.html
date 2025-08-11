@@ -98,9 +98,20 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            margin: 0 5px;
         }
         .back-button button:hover {
             background-color: #0056b3;
+        }
+        .back-button button.cra-button {
+            background-color: #28a745;
+        }
+        .back-button button.cra-button:hover {
+            background-color: #1e7e34;
+        }
+        .back-button button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
         }
         .error-details {
             color: #721c24;
@@ -156,6 +167,9 @@
         </div>
 
         <div class="back-button">
+            <button onclick="startCraGeneration()" id="craButton" class="cra-button" style="display: none;">
+                Generate CRA Files
+            </button>
             <button onclick="goBack()" id="backButton" style="display: none;">Back to Main Page</button>
         </div>
     </div>
@@ -283,6 +297,7 @@
                     details += '\nNo syntax errors detected';
                     updateStepDetails('step3', details);
                     stopPolling();
+                    showCraButton();
                     showBackButton();
                 } else if (jobData.uapStatus === 'FAILED') {
                     updateStepError('step3', 'UAP response failed or timeout');
@@ -346,8 +361,37 @@
             }
         }
 
+        function showCraButton() {
+            document.getElementById('craButton').style.display = 'inline-block';
+        }
+
         function showBackButton() {
             document.getElementById('backButton').style.display = 'inline-block';
+        }
+
+        function startCraGeneration() {
+            document.getElementById('craButton').disabled = true;
+            document.getElementById('craButton').textContent = 'Generating CRA...';
+            
+            fetch("/api/job/start-cra", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('CRA files generated successfully!');
+                } else {
+                    alert('Failed to generate CRA files: ' + data.message);
+                }
+                document.getElementById('craButton').disabled = false;
+                document.getElementById('craButton').textContent = 'Generate CRA Files';
+            })
+            .catch(error => {
+                alert('Error generating CRA files: ' + error.message);
+                document.getElementById('craButton').disabled = false;
+                document.getElementById('craButton').textContent = 'Generate CRA Files';
+            });
         }
 
         function goBack() {
