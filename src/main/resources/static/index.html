@@ -2,58 +2,352 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Remises Uploader</title>
+    <title>Remises Uploader & Cheque Monitor</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px; 
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
         .top-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 30px;
         }
-        .right-btn {
-            margin-left: auto;
+        button { 
+            margin: 10px; 
+            padding: 10px 20px; 
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
         }
-        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
-        .remise-block { margin-bottom: 40px; }
-        table { border-collapse: collapse; margin-top: 20px; width: 100%; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-        th { background: #f0f0f0; }
-        input[type="file"] { display: none; }
-        .totalAmount { margin-top: 10px; font-weight: bold; }
-        .remise-title { font-size: 18px; margin-top: 20px; }
+        .upload-btn { background-color: #007bff; color: white; }
         #generateLotBtn { background: #4CAF50; color: white; }
-        .upload-status { margin: 10px 0; font-weight: bold; color: #666; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; opacity: 0.6; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 12px 24px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-bottom: none;
+            cursor: pointer;
+            margin-right: 5px;
+            border-radius: 8px 8px 0 0;
+        }
+        .tab:hover { background-color: #e9ecef; }
+        .tab.active {
+            background-color: white;
+            border-bottom: 2px solid white;
+            margin-bottom: -2px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .tab-count {
+            background-color: #007bff;
+            color: white;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+
+        /* Content */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .remise-block { 
+            margin-bottom: 40px; 
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .cheque-table-container {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        table { 
+            border-collapse: collapse; 
+            margin-top: 20px; 
+            width: 100%; 
+        }
+        th, td { 
+            border: 1px solid #ccc; 
+            padding: 12px 8px; 
+            text-align: left; 
+            font-size: 14px;
+        }
+        th { background: #f8f9fa; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        tr:hover { background-color: #e9ecef; }
+        
+        .remise-title { 
+            font-size: 18px; 
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .totalAmount { 
+            margin-top: 15px; 
+            font-weight: bold; 
+            color: #28a745;
+            font-size: 16px;
+        }
+        .upload-status { 
+            margin: 10px 0; 
+            font-weight: bold; 
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-to-be-integrated { background-color: #ffc107; }
+        .status-integrated { background-color: #007bff; }
+        .status-processed { background-color: #28a745; }
+        
+        .empty-state {
+            text-align: center;
+            color: #6c757d;
+            padding: 40px;
+            font-style: italic;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        input[type="file"] { display: none; }
     </style>
 </head>
 <body>
-    <h1>Remises Uploader</h1>
-    <div class="top-bar" id="topBar">
-        <button onclick="document.getElementById('remisesInput').click()">Add Remises (.remise)</button>
-        <div class="right-btn">
+    <div class="container">
+        <h1>Remises Uploader & Cheque Monitor</h1>
+        
+        <div class="top-bar">
+            <button class="upload-btn" onclick="document.getElementById('remisesInput').click()">Add Remises (.remise)</button>
             <button id="generateLotBtn" onclick="generateLotFile()" disabled>Generate LOT file</button>
         </div>
+        <input id="remisesInput" type="file" accept=".remise" multiple onchange="handleFiles(event)">
+        <div class="upload-status" id="uploadStatus"></div>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="remises" onclick="switchTab('remises')">
+                📁 Uploaded Remises
+                <span class="tab-count" id="remises-count">0</span>
+            </div>
+            <div class="tab" data-tab="to-be-integrated" onclick="switchTab('to-be-integrated')">
+                <span class="status-indicator status-to-be-integrated"></span>
+                To Be Integrated
+                <span class="tab-count" id="to-be-integrated-count">0</span>
+            </div>
+            <div class="tab" data-tab="integrated" onclick="switchTab('integrated')">
+                <span class="status-indicator status-integrated"></span>
+                Integrated
+                <span class="tab-count" id="integrated-count">0</span>
+            </div>
+            <div class="tab" data-tab="processed" onclick="switchTab('processed')">
+                <span class="status-indicator status-processed"></span>
+                Processed
+                <span class="tab-count" id="processed-count">0</span>
+            </div>
+        </div>
+        
+        <!-- Tab Contents -->
+        <div id="remises-content" class="tab-content active">
+            <div id="remisesContainer"></div>
+        </div>
+        
+        <div id="to-be-integrated-content" class="tab-content">
+            <div class="cheque-table-container">
+                <h3>Cheques: To Be Integrated</h3>
+                <div id="to-be-integrated-cheques"></div>
+            </div>
+        </div>
+        
+        <div id="integrated-content" class="tab-content">
+            <div class="cheque-table-container">
+                <h3>Cheques: Integrated</h3>
+                <div id="integrated-cheques"></div>
+            </div>
+        </div>
+        
+        <div id="processed-content" class="tab-content">
+            <div class="cheque-table-container">
+                <h3>Cheques: Processed</h3>
+                <div id="processed-cheques"></div>
+            </div>
+        </div>
     </div>
-    <input id="remisesInput" type="file" accept=".remise" multiple onchange="handleFiles(event)">
-    <div class="upload-status" id="uploadStatus"></div>
-    <div id="remisesContainer"></div>
+
     <script>
         let serverDirectoryPath = null;
+        let statusCounts = {};
 
         window.onload = function() {
             fetchAndDisplayRemises();
+            fetchStatusCounts();
         };
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabName}-content`).classList.add('active');
+            
+            if (tabName !== 'remises') {
+                loadChequesForStatus(tabName.replace('-', ' '));
+            }
+        }
+
+        function fetchStatusCounts() {
+            fetch('/api/cheques/by-status')
+                .then(response => response.json())
+                .then(data => {
+                    statusCounts = {};
+                    if (data.statusCounts) {
+                        data.statusCounts.forEach(item => {
+                            statusCounts[item.status] = item.count;
+                        });
+                    }
+                    updateTabCounts();
+                });
+        }
+
+        function updateTabCounts() {
+            document.getElementById('to-be-integrated-count').textContent = statusCounts['to be integrated'] || 0;
+            document.getElementById('integrated-count').textContent = statusCounts['integrated'] || 0;
+            document.getElementById('processed-count').textContent = statusCounts['processed'] || 0;
+            
+            const remiseBlocks = document.querySelectorAll('.remise-block');
+            document.getElementById('remises-count').textContent = remiseBlocks.length;
+        }
+
+        function loadChequesForStatus(status) {
+            const containerId = status.replace(' ', '-') + '-cheques';
+            const container = document.getElementById(containerId);
+            
+            container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading cheques...</div>';
+            
+            fetch(`/api/cheques/by-status?status=${encodeURIComponent(status)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = `<div class="empty-state">Error: ${data.error}</div>`;
+                        return;
+                    }
+                    
+                    if (!data.cheques || data.cheques.length === 0) {
+                        container.innerHTML = '<div class="empty-state">No cheques found for this status</div>';
+                        return;
+                    }
+                    
+                    displayChequesTable(data.cheques, container);
+                });
+        }
+
+        function displayChequesTable(cheques, container) {
+            let totalAmount = 0;
+            
+            const table = document.createElement("table");
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>RIO</th>
+                        <th>Operation Type</th>
+                        <th>Beneficiary RIB</th>
+                        <th>Beneficiary Bank</th>
+                        <th>Cheque Number</th>
+                        <th>Sender RIB</th>
+                        <th>Sender Bank</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            
+            const tbody = table.querySelector('tbody');
+            cheques.forEach(cheque => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${cheque.id || 'N/A'}</td>
+                    <td>${cheque.rio || 'N/A'}</td>
+                    <td>${cheque.operation_type || 'N/A'}</td>
+                    <td>${cheque.beneficiary_rib || 'N/A'}</td>
+                    <td>${cheque.beneficiary_bank || 'N/A'}</td>
+                    <td>${cheque.cheque_number || 'N/A'}</td>
+                    <td>${cheque.sender_rib || 'N/A'}</td>
+                    <td>${cheque.sender_bank || 'N/A'}</td>
+                    <td>${cheque.amount || 0}</td>
+                    <td>
+                        <span class="status-indicator status-${cheque.status ? cheque.status.replace(' ', '-') : 'unknown'}"></span>
+                        ${cheque.status || 'Unknown'}
+                    </td>
+                `;
+                tbody.appendChild(row);
+                totalAmount += parseFloat(cheque.amount) || 0;
+            });
+            
+            const totalDiv = document.createElement("div");
+            totalDiv.className = "totalAmount";
+            totalDiv.textContent = `Total Amount: ${totalAmount} (${cheques.length} cheques)`;
+            
+            container.innerHTML = '';
+            container.appendChild(table);
+            container.appendChild(totalDiv);
+        }
 
         function handleFiles(event) {
             const files = event.target.files;
             if (!files.length) return;
 
-            serverDirectoryPath = null;
             const statusDiv = document.getElementById("uploadStatus");
             statusDiv.textContent = "Uploading files to server...";
             statusDiv.style.color = "#666";
 
             uploadFilesToServer(files).then(() => {
                 fetchAndDisplayRemises();
+                fetchStatusCounts();
             }).catch(error => {
                 statusDiv.textContent = "Upload failed: " + error.message;
                 statusDiv.style.color = "red";
@@ -62,23 +356,19 @@
 
         function uploadFilesToServer(files) {
             const formData = new FormData();
-            Array.from(files).forEach(file => {
-                formData.append('files', file);
-            });
+            Array.from(files).forEach(file => formData.append('files', file));
 
             return fetch('/api/upload/remises', {
                 method: 'POST',
                 body: formData
             })
             .then(response => {
-                if (!response.ok) {
-                    throw new Error('Upload failed');
-                }
+                if (!response.ok) throw new Error('Upload failed');
                 return response.json();
             })
             .then(data => {
                 serverDirectoryPath = data.directoryPath;
-                document.getElementById("uploadStatus").textContent =
+                document.getElementById("uploadStatus").textContent = 
                     "Files uploaded successfully to: " + serverDirectoryPath;
                 document.getElementById("uploadStatus").style.color = "green";
             });
@@ -90,14 +380,19 @@
                 .then(remises => {
                     const container = document.getElementById("remisesContainer");
                     container.innerHTML = "";
+                    
                     if (remises.length === 0) {
+                        container.innerHTML = '<div class="empty-state">No remise files uploaded yet</div>';
                         document.getElementById("generateLotBtn").disabled = true;
+                        updateTabCounts();
                         return;
                     }
+                    
                     remises.forEach(remise => {
                         fetchRemiseFileAndDisplay(remise.filePath, remise.fileName);
                     });
                     document.getElementById("generateLotBtn").disabled = false;
+                    updateTabCounts();
                 });
         }
 
@@ -107,25 +402,30 @@
                 .then(content => {
                     const lines = content.split(/\r?\n/).filter(line => line.trim() !== "");
                     if (lines.length < 2) return;
+                    
                     let total = 0;
                     const table = document.createElement("table");
-                    const thead = document.createElement("thead");
-                    thead.innerHTML = `
-                        <tr>
-                            <th>RIO</th>
-                            <th>Operation Type</th>
-                            <th>Beneficiary RIB</th>
-                            <th>Beneficiary Bank</th>
-                            <th>Cheque Number</th>
-                            <th>Sender RIB</th>
-                            <th>Sender Bank</th>
-                            <th>Amount</th>
-                        </tr>`;
-                    table.appendChild(thead);
-                    const tbody = document.createElement("tbody");
+                    table.innerHTML = `
+                        <thead>
+                            <tr>
+                                <th>RIO</th>
+                                <th>Operation Type</th>
+                                <th>Beneficiary RIB</th>
+                                <th>Beneficiary Bank</th>
+                                <th>Cheque Number</th>
+                                <th>Sender RIB</th>
+                                <th>Sender Bank</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    `;
+                    
+                    const tbody = table.querySelector('tbody');
                     for (let i = 1; i < lines.length; i++) {
                         const values = lines[i].split(".");
                         if (values.length !== 8) continue;
+                        
                         const row = document.createElement("tr");
                         values.forEach((val, idx) => {
                             const cell = document.createElement("td");
@@ -138,29 +438,34 @@
                         });
                         tbody.appendChild(row);
                     }
-                    table.appendChild(tbody);
+                    
                     const block = document.createElement("div");
                     block.className = "remise-block";
+                    
                     const title = document.createElement("div");
                     title.className = "remise-title";
-                    title.textContent = "Remise: " + fileName;
+                    title.textContent = "📄 " + fileName;
+                    
                     const totalDiv = document.createElement("div");
                     totalDiv.className = "totalAmount";
                     totalDiv.textContent = "Total Amount: " + total;
+                    
                     block.appendChild(title);
                     block.appendChild(table);
                     block.appendChild(totalDiv);
                     document.getElementById("remisesContainer").appendChild(block);
+                    
+                    updateTabCounts();
                 });
         }
 
         function generateLotFile() {
-            // Get the remises directory to pass to monitoring page
-            const remisesDir = serverDirectoryPath || '/uploads/remises/';
-            
-            // Navigate to monitoring page instead of showing alert
+            const remisesDir = serverDirectoryPath || 'uploads/remises/';
             window.location.href = `/monitoring.html?remisesDir=${encodeURIComponent(remisesDir)}`;
         }
+
+        // Auto-refresh status counts every 30 seconds
+        setInterval(fetchStatusCounts, 30000);
     </script>
 </body>
 </html>

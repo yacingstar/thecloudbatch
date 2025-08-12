@@ -6,6 +6,10 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
+
+import dz.eadn.thecloudbatch.model.Cheque;
 
 import java.io.*;
 import java.nio.file.*;
@@ -23,17 +27,19 @@ public class IntegrateJobController {
 
     private JobLauncher jobLauncher;
     private Job chequeJobThing;
-    private Job craJob; // Assuming this is defined elsewhere in your application
+    private Job craJob;
     private JobRepository jobRepository;
+    private JdbcTemplate jdbcTemplate; // Add this for database queries
     
     // Store job execution details for monitoring
     private final Map<String, JobStatusInfo> jobStatusMap = new ConcurrentHashMap<>();
 
-    public IntegrateJobController(JobLauncher jobLauncher, Job chequeJobThing, JobRepository jobRepository, Job craJob) {
+    public IntegrateJobController(JobLauncher jobLauncher, Job chequeJobThing, JobRepository jobRepository, Job craJob, JdbcTemplate jdbcTemplate) {
         this.jobLauncher = jobLauncher;
         this.chequeJobThing = chequeJobThing;
         this.jobRepository = jobRepository;
         this.craJob = craJob;
+        this.jdbcTemplate = jdbcTemplate;
         
         // Ensure directories exist
         createDirectories();
@@ -47,6 +53,53 @@ public class IntegrateJobController {
             Files.createDirectories(Paths.get(CRL_DIR));
         } catch (IOException e) {
             System.err.println("Failed to create directories: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/api/cheques/by-status")
+    public ResponseEntity<Map<String, Object>> getChequesByStatus(@RequestParam(required = false) String status) {
+        try {
+            Map<String, Object> response = new HashMap<>();
+            
+            if (status == null || status.isEmpty()) {
+                // Return counts for all statuses
+                String countSql = """
+                    SELECT status, COUNT(*) as count 
+                    FROM cheques 
+                    GROUP BY status
+                    ORDER BY 
+                        CASE status 
+                            WHEN 'to be integrated' THEN 1
+                            WHEN 'integrated' THEN 2
+                            WHEN 'processed' THEN 3
+                            ELSE 4
+                        END
+                    """;
+                
+                List<Map<String, Object>> statusCounts = jdbcTemplate.queryForList(countSql);
+                response.put("statusCounts", statusCounts);
+                
+                // Also return total count
+                String totalSql = "SELECT COUNT(*) FROM cheques";
+                Integer totalCount = jdbcTemplate.queryForObject(totalSql, Integer.class);
+                response.put("totalCount", totalCount != null ? totalCount : 0);
+                
+            } else {
+                // Return cheques for specific status
+                String sql = "SELECT * FROM cheques WHERE status = ? ORDER BY id DESC";
+                List<Cheque> cheques = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Cheque.class), status);
+                
+                response.put("cheques", cheques);
+                response.put("status", status);
+                response.put("count", cheques.size());
+            }
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Failed to fetch cheques: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
 
